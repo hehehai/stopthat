@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/hehehai/stopthat/releases/latest">下载最新版 (v0.1.0)</a> ·
-  <a href="#针对-adobe-联网报错与弹窗问题的专门处理">Adobe 报错解决方案</a> ·
+  <a href="docs/adobe-guide.md">Adobe 报错完全处理指南</a> ·
   <a href="https://raw.githubusercontent.com/hehehai/stopthat/main/SKILL.md">Agent Skill 文档</a> ·
   <a href="#界面预览">界面预览</a> ·
   <a href="#恢复方式">恢复与还原</a> ·
@@ -36,6 +36,8 @@
 2. **出站 + 入站双方向批量拦截**：Windows 端通过系统防火墙批量写入「出站 + 入站」阻止规则，覆盖域 / 专用 / 公用全部网络配置，不再需要手工逐个找路径、删引号、重复新建几十条规则。
 3. **专治「配了还是弹」的环境体检**：内置一键体检，自动排查常见失效原因——系统防火墙未开启、被**火绒 / 360** 等第三方安全软件接管、或开启了 **Clash / v2ray 等系统代理**；同时支持一键复制全部扫描到的程序路径清单，方便在火绒或代理软件中同步拦截。
 4. **随时一键还原，不污染系统**：所有规则均带有 `StopThat` 专属前缀，绝不误删系统原有规则，随时可以单个恢复或一键彻底清空。
+
+👉 **完整原理、图文步骤与常见问题排查，请查看专项文档：[《Adobe 联网报错与禁用弹窗完全处理指南》](docs/adobe-guide.md)**。
 
 ---
 
