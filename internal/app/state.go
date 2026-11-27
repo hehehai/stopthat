@@ -24,6 +24,7 @@ const (
 // Options customizes State construction (primarily for desktop wiring and tests).
 type Options struct {
 	ScanOS     string
+	Async      bool
 	Invalidate func()
 	PickFolder func(title string) (string, error)
 	PickFile   func(title string) (string, error)
@@ -55,6 +56,7 @@ type State struct {
 	StatusMsg string
 	StatusErr bool
 	Busy      bool
+	BusyMsg   string
 }
 
 // NewState initializes State, loads persisted settings, and performs an initial scan.
@@ -96,6 +98,74 @@ func (s *State) notifyUI() {
 	s.mu.Unlock()
 	if fn != nil {
 		fn()
+	}
+}
+
+// RunAsync runs a potentially slow operation off the UI thread when Options.Async is true,
+// updating Busy/BusyMsg and triggering redraws before and after.
+func (s *State) RunAsync(label string, fn func()) {
+	if !s.opts.Async {
+		fn()
+		return
+	}
+	s.mu.Lock()
+	if s.Busy {
+		s.mu.Unlock()
+		return
+	}
+	s.Busy = true
+	s.BusyMsg = label
+	s.mu.Unlock()
+	s.notifyUI()
+
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			s.Busy = false
+			s.BusyMsg = ""
+			s.mu.Unlock()
+			s.notifyUI()
+		}()
+		fn()
+	}()
+}
+
+// HandleDroppedFiles processes files or folders dragged onto the application window.
+func (s *State) HandleDroppedFiles(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	s.RunAsync("正在扫描拖入的程序或目录...", func() {
+		if s.Section == SectionAdobe {
+			for _, p := range paths {
+				s.AddExtraPresetRoot("adobe", presets.ResolveShortcut(p))
+			}
+			return
+		}
+		for _, p := range paths {
+			s.AddCustomPath(p)
+		}
+		s.mu.Lock()
+		s.Section = SectionCustom
+		s.mu.Unlock()
+	})
+}
+
+// FormatPathsText formats discovered executable paths one per line for clipboard export.
+func FormatPathsText(targets []presets.Target) string {
+	lines := make([]string, 0, len(targets))
+	for _, t := range targets {
+		lines = append(lines, t.Path)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// OpenSystemFirewallSettings opens the OS firewall control panel.
+func (s *State) OpenSystemFirewallSettings() {
+	if err := firewall.OpenSystemFirewallSettings(); err != nil {
+		s.mu.Lock()
+		s.setStatusLocked(err.Error(), true)
+		s.mu.Unlock()
 	}
 }
 

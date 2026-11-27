@@ -68,7 +68,7 @@ func ScanPreset(p Preset, opts ScanOptions) []Target {
 	return targets
 }
 
-// ScanCustomPath scans a user-supplied executable file, .app bundle, or directory.
+// ScanCustomPath scans a user-supplied executable file, .lnk shortcut, .app bundle, or directory.
 func ScanCustomPath(path string, goos string) []Target {
 	if goos == "" {
 		goos = runtime.GOOS
@@ -77,6 +77,7 @@ func ScanCustomPath(path string, goos string) []Target {
 	if path == "" {
 		return nil
 	}
+	path = ResolveShortcut(path)
 	targets := scanPath("custom", path, goos)
 	sortTargets(targets)
 	return targets

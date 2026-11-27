@@ -13,7 +13,7 @@ import (
 func (s *State) View(c *ui.Context) {
 	t := c.Theme()
 
-	ui.Row(c).Fill().Background(t.Background).Children(func() {
+	root := ui.Row(c).Fill().Background(t.Background).Children(func() {
 		s.renderSidebar(c, t)
 		ui.Divider(c)
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
@@ -32,6 +32,9 @@ func (s *State) View(c *ui.Context) {
 			}
 		})
 	})
+	if dropped := root.DroppedFiles(); len(dropped) > 0 {
+		s.HandleDroppedFiles(dropped)
+	}
 }
 
 func (s *State) renderSidebar(c *ui.Context, t *ui.Theme) {
@@ -105,6 +108,16 @@ func (s *State) renderBanners(c *ui.Context, t *ui.Theme) {
 			}
 		})
 	}
+	if s.Busy {
+		ui.Row(c).FillWidth().Padding(8, 20).Background(t.Surface).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Spinner(c)
+			msg := s.BusyMsg
+			if msg == "" {
+				msg = "正在处理防火墙规则，请稍候..."
+			}
+			ui.Text(c, msg).FontSize(12).TextColor(t.Text)
+		})
+	}
 	if s.StatusMsg != "" {
 		bg := t.Surface
 		fg := t.Text
@@ -140,27 +153,35 @@ func (s *State) renderPresetView(c *ui.Context, t *ui.Theme, presetID string) {
 					ui.Text(c, preset.Description).FontSize(12).TextColor(t.TextMuted)
 				})
 				ui.Row(c).Gap(8).Children(func() {
-					if ui.PrimaryButton(c.Key("block-all"), "一键全部阻止").Disabled(total == 0).Clicked() {
-						s.BlockPresetAll(presetID)
+					if ui.PrimaryButton(c.Key("block-all"), "一键全部阻止").Disabled(total == 0 || s.Busy).Clicked() {
+						s.RunAsync("正在批量写入防火墙阻止规则...", func() { s.BlockPresetAll(presetID) })
 					}
-					if ui.Button(c.Key("unblock-all"), "一键全部恢复").Disabled(blockedCount == 0).Clicked() {
-						s.UnblockPresetAll(presetID)
+					if ui.Button(c.Key("unblock-all"), "一键全部恢复").Disabled(blockedCount == 0 || s.Busy).Clicked() {
+						s.RunAsync("正在批量恢复联网权限...", func() { s.UnblockPresetAll(presetID) })
 					}
 				})
 			})
 
 			ui.Divider(c)
 
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Textf(c, "已扫描 %d 个程序（主程序 %d · 后台组件 %d · 已阻止 %d）",
 					total, mainCount, bgCount, blockedCount).FontSize(12).TextColor(t.TextMuted).Grow(1)
-				if ui.Button(c.Key("add-preset-dir"), "添加安装目录").Clicked() {
+				if ui.Button(c.Key("copy-preset-paths"), "复制路径清单").Disabled(total == 0).Clicked() {
+					c.WriteClipboard(FormatPathsText(allTargets))
+					s.StatusMsg = fmt.Sprintf("已复制 %d 条程序路径到剪贴板（可用于火绒或代理规则）", total)
+					s.StatusErr = false
+				}
+				if ui.Button(c.Key("add-preset-dir"), "添加安装目录").Disabled(s.Busy).Clicked() {
 					s.PickAndAddPresetFolder(presetID)
 				}
-				if ui.Button(c.Key("rescan-preset"), "重新扫描").Clicked() {
-					s.RefreshAll()
-					s.StatusMsg = fmt.Sprintf("重新扫描完成，共发现 %d 个 %s 程序", len(s.presetTargets[presetID]), preset.ShortName)
-					s.StatusErr = false
+				if ui.Button(c.Key("rescan-preset"), "重新扫描").Disabled(s.Busy).Clicked() {
+					s.RunAsync("正在重新扫描安装目录与防火墙规则...", func() {
+						s.RefreshAll()
+						s.mu.Lock()
+						s.setStatusLocked(fmt.Sprintf("重新扫描完成，共发现 %d 个 %s 程序", len(s.presetTargets[presetID]), preset.ShortName), false)
+						s.mu.Unlock()
+					})
 				}
 			})
 
@@ -245,8 +266,10 @@ func (s *State) renderTargetRow(c *ui.Context, t *ui.Theme, target presets.Targe
 		}
 		ui.Text(c, statusLabel).FontSize(12).TextColor(statusColor)
 
-		if ui.Switch(c.Key("sw-"+target.ID), &on).Changed() {
-			s.ToggleTarget(target, on)
+		if ui.Switch(c.Key("sw-"+target.ID), &on).Disabled(s.Busy).Changed() {
+			wantBlock := on
+			tgt := target
+			s.RunAsync("正在更新防火墙规则...", func() { s.ToggleTarget(tgt, wantBlock) })
 		}
 	})
 }
@@ -260,14 +283,19 @@ func (s *State) renderCustomView(c *ui.Context, t *ui.Theme) {
 					ui.Text(c, "添加任意可执行文件（.exe / .app）或安装目录，StopThat 会自动扫描其中的可执行程序供你按需开关联网权限。").FontSize(12).TextColor(t.TextMuted)
 				})
 				ui.Row(c).Gap(8).Children(func() {
-					if ui.Button(c.Key("pick-file"), "选择程序").Clicked() {
+					if ui.Button(c.Key("pick-file"), "选择程序").Disabled(s.Busy).Clicked() {
 						s.PickAndAddCustomPath(false)
 					}
-					if ui.Button(c.Key("pick-dir"), "选择目录").Clicked() {
+					if ui.Button(c.Key("pick-dir"), "选择目录").Disabled(s.Busy).Clicked() {
 						s.PickAndAddCustomPath(true)
 					}
-					if ui.PrimaryButton(c.Key("block-custom-all"), "全部阻止").Disabled(len(s.customTargets) == 0).Clicked() {
-						s.BlockCustomAll()
+					if ui.Button(c.Key("copy-custom-paths"), "复制路径").Disabled(len(s.customTargets) == 0).Clicked() {
+						c.WriteClipboard(FormatPathsText(s.customTargets))
+						s.StatusMsg = fmt.Sprintf("已复制 %d 条自定义程序路径到剪贴板", len(s.customTargets))
+						s.StatusErr = false
+					}
+					if ui.PrimaryButton(c.Key("block-custom-all"), "全部阻止").Disabled(len(s.customTargets) == 0 || s.Busy).Clicked() {
+						s.RunAsync("正在批量阻止自定义程序联网...", func() { s.BlockCustomAll() })
 					}
 				})
 			})
@@ -299,7 +327,7 @@ func (s *State) renderCustomView(c *ui.Context, t *ui.Theme) {
 		if len(s.customTargets) == 0 {
 			ui.Column(c).Grow(1).FillWidth().Center().Gap(6).Children(func() {
 				ui.Text(c, "暂未添加自定义应用").FontSize(14).TextColor(t.TextMuted)
-				ui.Text(c, "可点击上方「选择程序」/「选择目录」，或直接粘贴路径（支持带引号的快捷方式目标路径）。").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, "支持直接将桌面快捷方式（.lnk）、程序（.exe / .app）或整个文件夹拖入窗口。").FontSize(12).TextColor(t.TextMuted)
 			})
 		} else {
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
@@ -321,13 +349,16 @@ func (s *State) renderRulesView(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, "所有规则均带有 StopThat 专属前缀，不会影响你或系统原有的其他防火墙规则，支持随时一键还原。").FontSize(12).TextColor(t.TextMuted)
 			})
 			ui.Row(c).Gap(8).Children(func() {
-				if ui.Button(c.Key("refresh-rules"), "刷新").Clicked() {
-					s.RefreshAll()
-					s.StatusMsg = fmt.Sprintf("已刷新，当前共 %d 条生效规则", len(s.rules))
-					s.StatusErr = false
+				if ui.Button(c.Key("refresh-rules"), "刷新").Disabled(s.Busy).Clicked() {
+					s.RunAsync("正在刷新防火墙规则列表...", func() {
+						s.RefreshAll()
+						s.mu.Lock()
+						s.setStatusLocked(fmt.Sprintf("已刷新，当前共 %d 条生效规则", len(s.rules)), false)
+						s.mu.Unlock()
+					})
 				}
-				if ui.Button(c.Key("remove-all-rules"), "一键全部还原").Disabled(len(s.rules) == 0).Clicked() {
-					s.RemoveAllManagedRules()
+				if ui.Button(c.Key("remove-all-rules"), "一键全部还原").Disabled(len(s.rules) == 0 || s.Busy).Clicked() {
+					s.RunAsync("正在一键还原全部 StopThat 规则...", func() { s.RemoveAllManagedRules() })
 				}
 			})
 		})
@@ -354,8 +385,9 @@ func (s *State) renderRulesView(c *ui.Context, t *ui.Theme) {
 								})
 								ui.Text(c, rule.ProgramPath).FontSize(11).TextColor(t.TextMuted)
 							})
-							if ui.Button(c.Key("rm-rule-"+rule.Name), "恢复联网").Clicked() {
-								s.UnblockPath(rule.ProgramPath)
+							if ui.Button(c.Key("rm-rule-"+rule.Name), "恢复联网").Disabled(s.Busy).Clicked() {
+								p := rule.ProgramPath
+								s.RunAsync("正在恢复程序联网...", func() { s.UnblockPath(p) })
 							}
 						})
 					}
@@ -373,11 +405,14 @@ func (s *State) renderDiagnosticsView(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, "排查「已加规则但仍未生效」的常见原因：防火墙未启用、第三方安全软件接管、系统代理/TUN 绕过等。").FontSize(12).TextColor(t.TextMuted)
 			})
 			ui.Row(c).Gap(8).Children(func() {
-				if ui.Button(c.Key("flush-dns"), "刷新 DNS 缓存").Clicked() {
-					s.FlushDNS()
+				if ui.Button(c.Key("open-fw-settings"), "打开系统防火墙").Clicked() {
+					s.OpenSystemFirewallSettings()
 				}
-				if ui.PrimaryButton(c.Key("recheck-diag"), "重新体检").Clicked() {
-					s.RefreshDiagnostics()
+				if ui.Button(c.Key("flush-dns"), "刷新 DNS 缓存").Disabled(s.Busy).Clicked() {
+					s.RunAsync("正在刷新 DNS 缓存...", func() { s.FlushDNS() })
+				}
+				if ui.PrimaryButton(c.Key("recheck-diag"), "重新体检").Disabled(s.Busy).Clicked() {
+					s.RunAsync("正在检测网络与防火墙环境...", func() { s.RefreshDiagnostics() })
 				}
 			})
 		})

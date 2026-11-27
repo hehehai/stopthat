@@ -5,11 +5,13 @@ package firewall
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+	"unicode/utf16"
 )
 
 type windowsEngine struct{}
@@ -23,7 +25,7 @@ func (e *windowsEngine) Capabilities() Capabilities {
 	elevated := isWindowsAdmin()
 	hint := ""
 	if !elevated {
-		hint = "当前未以管理员身份运行，修改 Windows 防火墙规则需要右键「以管理员身份运行」。"
+		hint = "当前未以管理员身份运行，修改 Windows 防火墙规则需要管理员权限。"
 	}
 	return Capabilities{
 		Platform:           "windows",
@@ -36,11 +38,9 @@ func (e *windowsEngine) Capabilities() Capabilities {
 }
 
 func (e *windowsEngine) ListRules(ctx context.Context) ([]Rule, error) {
-	// Use PowerShell to reliably query rules whose DisplayName starts with "StopThat ".
 	ps := `Get-NetFirewallRule -DisplayName 'StopThat *' -ErrorAction SilentlyContinue | ForEach-Object { $f = $_ | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue; "$($_.DisplayName)` + "\t" + `$($_.Direction)` + "\t" + `$($_.Enabled)` + "\t" + `$($f.Program)" }`
-	out, err := runHidden(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", ps)
+	out, err := runPowerShell(ctx, ps)
 	if err != nil {
-		// Fallback to netsh if PowerShell is restricted.
 		return e.listRulesNetsh(ctx)
 	}
 	var rules []Rule
@@ -127,8 +127,36 @@ func (e *windowsEngine) BlockPrograms(ctx context.Context, programs []ProgramSpe
 		return nil
 	}
 	if !isWindowsAdmin() {
-		return fmt.Errorf("需要管理员权限：请右键 StopThat 选择「以管理员身份运行」")
+		return fmt.Errorf("需要管理员权限：请点击顶部「以管理员身份重启」或右键以管理员身份运行")
 	}
+	if len(programs) == 0 {
+		return nil
+	}
+
+	// Fast path: execute all rules in a single PowerShell invocation.
+	var sb strings.Builder
+	sb.WriteString("$ErrorActionPreference = 'Stop'\n")
+	for _, p := range programs {
+		progPath := NormalizePath(p.Path)
+		if progPath == "" {
+			continue
+		}
+		if opts.BlockOutbound {
+			name := RuleName(DirOut, progPath, p.DisplayName)
+			fmt.Fprintf(&sb, "Remove-NetFirewallRule -DisplayName %s -ErrorAction SilentlyContinue | Out-Null\n", psQuote(name))
+			fmt.Fprintf(&sb, "New-NetFirewallRule -DisplayName %s -Direction Outbound -Action Block -Program %s -Profile Any -Enabled True | Out-Null\n", psQuote(name), psQuote(progPath))
+		}
+		if opts.BlockInbound {
+			name := RuleName(DirIn, progPath, p.DisplayName)
+			fmt.Fprintf(&sb, "Remove-NetFirewallRule -DisplayName %s -ErrorAction SilentlyContinue | Out-Null\n", psQuote(name))
+			fmt.Fprintf(&sb, "New-NetFirewallRule -DisplayName %s -Direction Inbound -Action Block -Program %s -Profile Any -Enabled True | Out-Null\n", psQuote(name), psQuote(progPath))
+		}
+	}
+	if _, err := runPowerShell(ctx, sb.String()); err == nil {
+		return nil
+	}
+
+	// Fallback: netsh per rule if PowerShell NetSecurity cmdlets are unavailable.
 	for _, p := range programs {
 		progPath := NormalizePath(p.Path)
 		if progPath == "" {
@@ -168,7 +196,7 @@ func (e *windowsEngine) BlockPrograms(ctx context.Context, programs []ProgramSpe
 
 func (e *windowsEngine) UnblockPrograms(ctx context.Context, paths []string) error {
 	if !isWindowsAdmin() {
-		return fmt.Errorf("需要管理员权限：请右键 StopThat 选择「以管理员身份运行」")
+		return fmt.Errorf("需要管理员权限：请点击顶部「以管理员身份重启」或右键以管理员身份运行")
 	}
 	rules, err := e.ListRules(ctx)
 	if err != nil {
@@ -178,11 +206,28 @@ func (e *windowsEngine) UnblockPrograms(ctx context.Context, paths []string) err
 	for _, p := range paths {
 		wanted[PathKey(p)] = struct{}{}
 	}
+	var toDelete []string
 	for _, r := range rules {
 		if _, ok := wanted[PathKey(r.ProgramPath)]; ok {
-			if _, err := runHidden(ctx, "netsh", "advfirewall", "firewall", "delete", "rule", "name="+r.Name); err != nil {
-				return fmt.Errorf("删除规则失败 (%s): %w", r.Name, err)
-			}
+			toDelete = append(toDelete, r.Name)
+		}
+	}
+	if len(toDelete) == 0 {
+		return nil
+	}
+
+	// Fast path: batch delete via single PowerShell invocation.
+	var sb strings.Builder
+	for _, name := range toDelete {
+		fmt.Fprintf(&sb, "Remove-NetFirewallRule -DisplayName %s -ErrorAction SilentlyContinue | Out-Null\n", psQuote(name))
+	}
+	if _, err := runPowerShell(ctx, sb.String()); err == nil {
+		return nil
+	}
+
+	for _, name := range toDelete {
+		if _, err := runHidden(ctx, "netsh", "advfirewall", "firewall", "delete", "rule", "name="+name); err != nil {
+			return fmt.Errorf("删除规则失败 (%s): %w", name, err)
 		}
 	}
 	return nil
@@ -190,11 +235,17 @@ func (e *windowsEngine) UnblockPrograms(ctx context.Context, paths []string) err
 
 func (e *windowsEngine) RemoveAllManaged(ctx context.Context) (int, error) {
 	if !isWindowsAdmin() {
-		return 0, fmt.Errorf("需要管理员权限：请右键 StopThat 选择「以管理员身份运行」")
+		return 0, fmt.Errorf("需要管理员权限：请点击顶部「以管理员身份重启」或右键以管理员身份运行")
 	}
 	rules, err := e.ListRules(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if len(rules) == 0 {
+		return 0, nil
+	}
+	if _, err := runPowerShell(ctx, `Remove-NetFirewallRule -DisplayName 'StopThat *' -ErrorAction SilentlyContinue`); err == nil {
+		return len(rules), nil
 	}
 	removed := 0
 	for _, r := range rules {
@@ -208,7 +259,6 @@ func (e *windowsEngine) RemoveAllManaged(ctx context.Context) (int, error) {
 func (e *windowsEngine) Diagnostics(ctx context.Context) []DiagnosticItem {
 	var items []DiagnosticItem
 
-	// 1. Admin check
 	if isWindowsAdmin() {
 		items = append(items, DiagnosticItem{
 			Title:  "管理员权限",
@@ -220,14 +270,12 @@ func (e *windowsEngine) Diagnostics(ctx context.Context) []DiagnosticItem {
 		items = append(items, DiagnosticItem{
 			Title:  "管理员权限",
 			Status: "未获取",
-			Detail: "请右键 StopThat 选择「以管理员身份运行」，否则无法写入防火墙规则。",
+			Detail: "请点击顶部「以管理员身份重启」，否则无法写入防火墙规则。",
 			Level:  DiagError,
 		})
 	}
 
-	// 2. Windows Firewall profile status
-	fwOut, fwErr := runHidden(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
-		`Get-NetFirewallProfile | ForEach-Object { "$($_.Name)=$($_.Enabled)" }`)
+	fwOut, fwErr := runPowerShell(ctx, `Get-NetFirewallProfile | ForEach-Object { "$($_.Name)=$($_.Enabled)" }`)
 	if fwErr != nil {
 		items = append(items, DiagnosticItem{
 			Title:  "Windows Defender 防火墙",
@@ -260,15 +308,14 @@ func (e *windowsEngine) Diagnostics(ctx context.Context) []DiagnosticItem {
 		}
 	}
 
-	// 3. Third-party security / firewall products
-	avOut, avErr := runHidden(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
+	avOut, avErr := runPowerShell(ctx,
 		`Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct -ErrorAction SilentlyContinue | Select-Object -ExpandProperty displayName`)
 	if avErr == nil && strings.TrimSpace(avOut) != "" {
 		names := strings.Join(strings.Split(strings.TrimSpace(strings.ReplaceAll(avOut, "\r\n", "\n")), "\n"), "、")
 		items = append(items, DiagnosticItem{
 			Title:  "第三方防火墙接管检测",
 			Status: "发现第三方产品",
-			Detail: "检测到已注册的第三方防火墙：" + names + "。若系统防火墙已被接管，请在对应安全软件的「联网控制」中同步拦截。",
+			Detail: "检测到已注册的第三方防火墙：" + names + "。若系统防火墙已被接管，可点击「复制路径清单」并在对应安全软件的联网控制中同步拦截。",
 			Level:  DiagWarn,
 		})
 	} else {
@@ -280,7 +327,6 @@ func (e *windowsEngine) Diagnostics(ctx context.Context) []DiagnosticItem {
 		})
 	}
 
-	// 4. System proxy check
 	proxyOut, proxyErr := runHidden(ctx, "reg", "query",
 		`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`, "/v", "ProxyEnable")
 	if proxyErr == nil && strings.Contains(strings.ToLower(proxyOut), "0x1") {
@@ -310,6 +356,13 @@ func (e *windowsEngine) FlushDNS(ctx context.Context) error {
 	return nil
 }
 
+// OpenSystemFirewallSettings opens Windows Defender Firewall with Advanced Security (wf.msc).
+func OpenSystemFirewallSettings() error {
+	cmd := exec.Command("cmd", "/c", "start", "", "wf.msc")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Start()
+}
+
 func isWindowsAdmin() bool {
 	f, err := os.Open(`\\.\PHYSICALDRIVE0`)
 	if err == nil {
@@ -317,6 +370,25 @@ func isWindowsAdmin() bool {
 		return true
 	}
 	return false
+}
+
+func runPowerShell(ctx context.Context, script string) (string, error) {
+	encoded := encodeUTF16LEBase64(script)
+	return runHidden(ctx, "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
+}
+
+func encodeUTF16LEBase64(s string) string {
+	u16 := utf16.Encode([]rune(s))
+	buf := make([]byte, len(u16)*2)
+	for i, v := range u16 {
+		buf[2*i] = byte(v)
+		buf[2*i+1] = byte(v >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
+func psQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func runHidden(ctx context.Context, name string, args ...string) (string, error) {
@@ -340,7 +412,6 @@ func runHidden(ctx context.Context, name string, args ...string) (string, error)
 }
 
 func extractDisplayName(ruleName string) string {
-	// Format: StopThat [out] <hash> <displayName>
 	parts := strings.SplitN(ruleName, " ", 4)
 	if len(parts) == 4 {
 		return parts[3]

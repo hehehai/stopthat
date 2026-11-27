@@ -200,6 +200,11 @@ func (e *darwinEngine) FlushDNS(ctx context.Context) error {
 	return nil
 }
 
+// OpenSystemFirewallSettings opens macOS System Settings -> Network -> Firewall.
+func OpenSystemFirewallSettings() error {
+	return exec.Command("open", "x-apple.systempreferences:com.apple.Network-Settings.extension").Start()
+}
+
 func runDarwinPrivileged(ctx context.Context, shellCmd string) error {
 	if os.Geteuid() == 0 {
 		_, err := runCmd(ctx, "/bin/sh", "-c", shellCmd)

@@ -19,6 +19,7 @@ func main() {
 	var win *mygo.Window
 
 	state := app.NewState(firewall.NewEngine(), st, app.Options{
+		Async: true,
 		PickFolder: func(title string) (string, error) {
 			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 				Parent:    win,

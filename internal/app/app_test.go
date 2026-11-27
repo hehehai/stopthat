@@ -74,4 +74,15 @@ func TestStopThatEndToEndUI(t *testing.T) {
 	if eng.FlushCount() != 1 {
 		t.Fatalf("expected FlushDNS count=1, got %d", eng.FlushCount())
 	}
+
+	// Dropped files on Custom page add targets and FormatPathsText exports them.
+	state.Section = SectionCustom
+	state.HandleDroppedFiles([]string{filepath.Join(dir, "AdobeGCClient", "AGSService.exe")})
+	if len(state.customTargets) != 2 {
+		t.Fatalf("expected 2 custom targets after drop, got %d", len(state.customTargets))
+	}
+	exported := FormatPathsText(state.customTargets)
+	if exported == "" {
+		t.Fatalf("expected non-empty FormatPathsText output")
+	}
 }
