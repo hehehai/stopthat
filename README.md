@@ -1,10 +1,88 @@
-# StopThat
+<p align="center">
+  <img src="docs/images/banner.png" alt="StopThat — 应用联网权限管理 · GUI / CLI / MCP" width="100%" />
+</p>
 
-基于 [MyGo](https://mygo.run/zh) 开发的跨平台（**Windows / macOS**）原生应用联网权限管理工具，同时内置 **图形界面（GUI）+ 命令行（CLI）+ MCP Server**，既支持普通用户一键操作，也支持 **ChatGPT / WorkBuddy / Claude** 等 AI Agent 自动安装并全权代管。
+<h1 align="center">StopThat</h1>
+
+<p align="center">
+  基于 <a href="https://mygo.run/zh">MyGo</a> 开发的跨平台（<b>Windows / macOS</b>）原生应用联网权限管理工具<br/>
+  内置 <b>图形界面（GUI）+ 命令行（CLI）+ MCP Server</b>，支持 <b>ChatGPT / WorkBuddy / Claude</b> 等 AI Agent 自动安装并全权处理
+</p>
+
+<p align="center">
+  <a href="https://github.com/hehehai/stopthat/releases/latest">下载最新版 (v0.1.0)</a> ·
+  <a href="https://raw.githubusercontent.com/hehehai/stopthat/main/SKILL.md">Agent Skill 文档</a> ·
+  <a href="#界面预览">界面预览</a> ·
+  <a href="#恢复方式">恢复与还原</a> ·
+  <a href="#卸载方式">干净卸载</a>
+</p>
 
 ---
 
-## 核心特性
+## 🤖 AI Agent 一键托管（直接复制发送即可）
+
+如果你正在使用 **WorkBuddy、ChatGPT、Claude Code、Codex、OpenClaw** 等具备本机执行能力的 AI Agent，**直接点击下方代码块右上角「复制」发给它**，Agent 会自动下载安装 StopThat、做网络体检、扫描本机应用并按你的确认完成拦截或恢复：
+
+```text
+请先阅读这个 Skill 文档：https://raw.githubusercontent.com/hehehai/stopthat/main/SKILL.md
+按文档自动检测并安装 StopThat，然后帮我做一次网络与防火墙环境体检，扫描本机 Adobe 套件（若默认目录未找到请询问我的安装目录），把扫描结果列给我确认后再执行阻止联网。
+```
+
+**如需一键恢复全部联网（同样直接复制发给 Agent）：**
+
+```text
+请使用 StopThat 执行一键还原（stopthat restore --json），清理全部由 StopThat 创建的防火墙规则并确认当前已生效规则数为 0。
+```
+
+### 🔌 接入 MCP Server（WorkBuddy / Claude Desktop / Cursor 等）
+
+<details>
+<summary><b>展开复制 macOS / Windows 的 MCP 配置（stdio 模式）</b></summary>
+
+**macOS：**
+```json
+{
+  "mcpServers": {
+    "stopthat": {
+      "command": "/Applications/StopThat.app/Contents/MacOS/StopThat",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Windows：**
+```json
+{
+  "mcpServers": {
+    "stopthat": {
+      "command": "C:\\Users\\<你的用户名>\\AppData\\Local\\StopThat\\stopthat-cli.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+接入后，Agent 可直接调用 7 个标准工具：`stopthat_diagnostics`、`stopthat_scan`、`stopthat_block`、`stopthat_unblock`、`stopthat_list_rules`、`stopthat_restore_all`、`stopthat_flush_dns`。
+
+</details>
+
+---
+
+## 📸 界面预览
+
+### Adobe 套件一键联网管理（主程序 + 后台组件）
+![StopThat Adobe 套件管理界面](docs/images/screenshot-adobe.png)
+
+### 网络与防火墙环境体检（排查第三方安全软件 / 代理冲突）
+![StopThat 网络与防火墙环境体检界面](docs/images/screenshot-diagnostics.png)
+
+### 已生效规则清单与一键还原
+![StopThat 已生效规则界面](docs/images/screenshot-rules.png)
+
+---
+
+## ✨ 核心特性
 
 - **内置应用套件预设（首批：Adobe Creative Cloud）**：
   - 自动扫描默认及自定义安装目录，识别 Photoshop、Illustrator、Premiere Pro、After Effects、Lightroom 等**主程序**，以及 `AdobeGCClient`、`AGSService`、`AGMService`、`agcinvokerutility`、`CCXProcess`、`CoreSync` 等**后台关联组件**。
@@ -16,8 +94,6 @@
   - 所有规则均带有 `StopThat` 专属前缀，绝不修改或误删系统与用户原有的其他防火墙规则，支持随时**一键全部还原**。
 - **网络与防火墙环境体检**：
   - 自动检测管理员权限、系统防火墙开关状态、第三方防火墙接管（火绒 / 360 等）、系统代理状态，并支持一键打开系统防火墙和刷新 DNS 缓存。
-- **原生 CLI + MCP（Model Context Protocol）**：
-  - 同一套工具既能双击开窗口，也能通过命令行 `--json` 或 stdio MCP 让 AI Agent 自动完成扫描、体检、拦截与恢复。
 
 ---
 
@@ -60,20 +136,10 @@
 
 启动 StopThat 后，左侧栏分为 4 个功能页：
 
-- **Adobe 套件**：
-  - 打开即自动扫描默认目录；若安装在 D 盘等自定义目录，点击 **「添加安装目录」** 或直接把文件夹拖入窗口。
-  - 勾选规则选项（推荐保持默认：**阻止出站 + 阻止入站 + 包含后台组件**）。
-  - 点击右上角 **「一键全部阻止」** 即可批量写入规则；也可以针对单个程序单独开关。
-- **自定义应用**：
-  - 点击 **「选择程序」** / **「选择目录」**，或直接把桌面快捷方式（`.lnk`）、`.exe` / `.app`、安装目录拖入窗口即可管理。
-- **已生效规则**：
-  - 集中查看所有由 StopThat 创建的防火墙规则，支持按条恢复或一键全部还原。
-- **网络体检**：
-  - 如果发现加了规则仍不生效，先来这里点 **「重新体检」**：
-    - 检查是否已获取管理员权限；
-    - 检查 Windows 防火墙是否全部开启；
-    - 检查是否被火绒/360 等第三方安全软件接管（若已接管，可点击「复制路径清单」到安全软件联网控制中同步拦截）；
-    - 检查系统代理状态，并提供 **「打开系统防火墙」** 和 **「刷新 DNS 缓存」** 按钮。
+- **Adobe 套件**：打开即自动扫描默认目录；若安装在 D 盘等自定义目录，点击 **「添加安装目录」** 或直接把文件夹拖入窗口，点击 **「一键全部阻止」** 即可批量写入规则。
+- **自定义应用**：点击 **「选择程序」** / **「选择目录」**，或直接把桌面快捷方式（`.lnk`）、`.exe` / `.app`、安装目录拖入窗口即可管理。
+- **已生效规则**：集中查看所有由 StopThat 创建的防火墙规则，支持按条恢复或一键全部还原。
+- **网络体检**：遇到规则不生效时先点 **「重新体检」**，可快速排查管理员权限、系统防火墙开关、火绒/360 接管、系统代理状态，并支持一键打开系统防火墙或刷新 DNS。
 
 > **平台能力说明**：
 > - **Windows**：通过 Windows Defender 防火墙批量管理**出站 + 入站**规则，完整覆盖阻止联网需求。
@@ -141,57 +207,6 @@ stopthat flush-dns --json
   Remove-Item -Recurse -Force "$env:APPDATA\StopThat" -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\StopThat" -ErrorAction SilentlyContinue
   ```
-
----
-
-## 六、AI Agent / Skill & MCP 调用方式
-
-StopThat 原生提供 **`SKILL.md`**、**`--json` CLI** 和 **MCP Server**，可以让 **ChatGPT、WorkBuddy、Claude Code、Cursor、OpenClaw** 等 AI Agent 自动安装并全权帮你完成体检、扫描、拦截和恢复。
-
-### 方式 A：直接把 Skill 链接发给 ChatGPT / WorkBuddy
-
-直接把下面这句话发给具备本机终端/执行能力的 Agent（如 WorkBuddy、Claude Code、Codex 等）：
-
-> 请先阅读这个 Skill 文档：`https://raw.githubusercontent.com/hehehai/stopthat/main/SKILL.md`，按文档自动安装 StopThat，然后帮我做一次网络体检，扫描本机 Adobe 软件并询问我确认后阻止其联网。
-
-Agent 会自动完成：检测环境 → 从 GitHub Releases 下载并安装 StopThat → 运行 `doctor` 体检 → 扫描程序列表 → 经你确认后执行 `block` 或 `restore`。
-
-### 方式 B：接入 MCP Server（WorkBuddy / Claude Desktop / Cursor 等）
-
-在支持 MCP 的客户端配置中加入 `stopthat`（stdio 模式）：
-
-**macOS 配置：**
-```json
-{
-  "mcpServers": {
-    "stopthat": {
-      "command": "/Applications/StopThat.app/Contents/MacOS/StopThat",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**Windows 配置：**
-```json
-{
-  "mcpServers": {
-    "stopthat": {
-      "command": "C:\\Users\\<你的用户名>\\AppData\\Local\\StopThat\\stopthat-cli.exe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-接入后，Agent 可直接调用 7 个标准工具：
-- `stopthat_diagnostics`（环境体检）
-- `stopthat_scan`（扫描预设套件或自定义路径）
-- `stopthat_block`（批量阻止联网）
-- `stopthat_unblock`（恢复指定程序/套件联网）
-- `stopthat_list_rules`（列出所有生效规则）
-- `stopthat_restore_all`（一键还原全部规则）
-- `stopthat_flush_dns`（刷新 DNS 缓存）
 
 ---
 
