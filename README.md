@@ -22,7 +22,11 @@
 
 ## 🎯 针对 Adobe 联网报错与弹窗问题的专门处理
 
-近期（2026 年 11 月底）中国区大量设计师与用户在使用 **Photoshop、Illustrator、Premiere Pro、After Effects、Lightroom** 等 Adobe 软件时，大面积出现联网校验报错与禁用弹窗（提示「此应用程序已被禁用 / 无法继续使用」等）。
+近期（2026 年 11 月底）中国区大量设计师与用户在使用 **Photoshop、Illustrator、Premiere Pro、After Effects、Lightroom** 等 Adobe 软件时，大面积出现如下联网校验报错与禁用弹窗：
+
+<p align="center">
+  <img src="docs/images/adobe-popup-issue.jpg" alt="Adobe 应用程序被禁用弹窗示例" width="520" />
+</p>
 
 很多人尝试过拔网线/断 Wi-Fi（导致整台电脑无法上网）、改 `hosts`（开了代理就失效、域名变化也失效），或者手动在系统防火墙里只添加了一个 `Photoshop.exe`（结果后台服务仍在联网，过一会儿又弹窗）。
 
