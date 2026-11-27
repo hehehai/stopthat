@@ -1,0 +1,7 @@
+build/
+.mygo/
+*.exe
+*.dmg
+*.app
+.DS_Store
+Thumbs.db

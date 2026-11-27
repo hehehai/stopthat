@@ -1,0 +1,16 @@
+{
+  "name": "StopThat",
+  "identifier": "dev.hehehai.stopthat",
+  "version": "0.1.0",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "14.0",
+    "infoPlist": {
+      "LSApplicationCategoryType": "public.app-category.utilities",
+      "CFBundleLocalizations": [
+        "zh-Hans",
+        "en"
+      ]
+    }
+  }
+}
