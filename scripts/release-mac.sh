@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# Build and optionally Developer ID sign + notarize StopThat.app & StopThat.dmg
-# on Apple Silicon macOS (following AudioSmith's release-local.sh pattern).
+# Build and Developer ID sign + Apple notarize StopThat.app & StopThat.dmg
+# on Apple Silicon macOS.
+#
+# Automatically uses the dedicated actnow-signing keychain and actnow-notary
+# profile (by SHA-1, zero GUI prompts over SSH) when present; otherwise falls
+# back to MACOS_SIGNING_IDENTITY / NOTARY_PROFILE environment variables.
 #
 # Usage:
 #   scripts/release-mac.sh                 # Developer ID signed + notarized
 #   scripts/release-mac.sh --skip-notarize # Developer ID signed, skip notarization
-#   scripts/release-mac.sh --dry-run       # ad-hoc signed .app + .dmg (no keychain unlock needed)
-#
-# Environment variables (optional):
-#   MACOS_SIGNING_IDENTITY  e.g. "Developer ID Application: wei guan (779M533DL5)"
-#   APPLE_TEAM_ID           filter identity by team ID if multiple exist
-#   NOTARY_PROFILE          notarytool keychain profile name (default: notary)
-#   NOTARY_KEYCHAIN         keychain holding the notary profile
+#   scripts/release-mac.sh --dry-run       # ad-hoc signed .app + .dmg
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,24 +31,46 @@ export PATH="/opt/homebrew/bin:$PATH"
 command -v jq > /dev/null || fail "needs jq"
 command -v go > /dev/null || fail "needs go"
 
+ACTNOW_KEYCHAIN="$HOME/Library/Keychains/actnow-signing.keychain-db"
+ACTNOW_KCPASS="$HOME/.config/actnow/signing/keychain-password"
+
 if $dry; then
-  unset MACOS_SIGNING_IDENTITY NOTARY_PROFILE
+  unset MACOS_SIGNING_IDENTITY NOTARY_PROFILE NOTARY_KEYCHAIN
   notarize=false
 else
-  if [[ -z "${MACOS_SIGNING_IDENTITY:-}" ]]; then
+  # Prefer dedicated actnow-signing keychain if installed on this Mac.
+  if [[ -z "${MACOS_SIGNING_IDENTITY:-}" && -f "$ACTNOW_KEYCHAIN" ]]; then
+    if [[ -f "$ACTNOW_KCPASS" ]]; then
+      security unlock-keychain -p "$(cat "$ACTNOW_KCPASS")" "$ACTNOW_KEYCHAIN"
+      security set-keychain-settings -lut 7200 "$ACTNOW_KEYCHAIN"
+    fi
+    sha="$(security find-identity -v -p codesigning "$ACTNOW_KEYCHAIN" \
+      | awk '/Developer ID Application:/ && length($2) == 40 && $2 ~ /^[0-9A-F]+$/ { print $2; exit }')"
+    [[ -n "$sha" ]] || fail "no valid Developer ID Application identity in $ACTNOW_KEYCHAIN"
+    MACOS_SIGNING_IDENTITY="$sha"
+    if $notarize; then
+      NOTARY_PROFILE="${NOTARY_PROFILE:-actnow-notary}"
+      NOTARY_KEYCHAIN="${NOTARY_KEYCHAIN:-$ACTNOW_KEYCHAIN}"
+    fi
+  elif [[ -z "${MACOS_SIGNING_IDENTITY:-}" ]]; then
     ids="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | sort -u)"
     if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
       ids="$(grep -F "($APPLE_TEAM_ID)" <<<"$ids" || true)"
     fi
     [[ -n "$ids" ]] || fail "no Developer ID Application identity found in keychains"
-    [[ "$(wc -l <<<"$ids")" -eq 1 ]] || fail "multiple Developer ID identities; set APPLE_TEAM_ID or MACOS_SIGNING_IDENTITY:\n$ids"
+    [[ "$(wc -l <<<"$ids")" -eq 1 ]] || fail "multiple Developer ID identities; set APPLE_TEAM_ID or MACOS_SIGNING_IDENTITY"
     MACOS_SIGNING_IDENTITY="$ids"
+    if $notarize; then
+      NOTARY_PROFILE="${NOTARY_PROFILE:-notary}"
+    fi
   fi
+
   export MACOS_SIGNING_IDENTITY
   if $notarize; then
-    export NOTARY_PROFILE="${NOTARY_PROFILE:-notary}"
+    export NOTARY_PROFILE="${NOTARY_PROFILE:-actnow-notary}"
+    export NOTARY_KEYCHAIN="${NOTARY_KEYCHAIN:-}"
   else
-    unset NOTARY_PROFILE
+    unset NOTARY_PROFILE NOTARY_KEYCHAIN
   fi
 fi
 
@@ -70,7 +90,7 @@ if [[ -n "${MACOS_SIGNING_IDENTITY:-}" || -n "${NOTARY_PROFILE:-}" ]]; then
   printf '%s\n' "$updated" > mygo.json
 fi
 
-echo "release-mac: signing=${MACOS_SIGNING_IDENTITY:-ad-hoc} notarize=$notarize"
+echo "release-mac: signing=${MACOS_SIGNING_IDENTITY:-ad-hoc} notarize=$notarize profile=${NOTARY_PROFILE:-none}"
 
 flags=()
 $notarize || flags+=(-skip-notarize)
@@ -86,5 +106,5 @@ if ! $dry && $notarize; then
   spctl --assess --type execute --verbose "$app_path"
 fi
 
-ls -lh build/ build/darwin-arm64 2>/dev/null || true
+ls -lh build/darwin-arm64 2>/dev/null || true
 echo "release-mac: DONE"
