@@ -2,11 +2,17 @@
   "name": "StopThat",
   "identifier": "dev.hehehai.stopthat",
   "version": "0.1.0",
+  "copyright": "Copyright © 2026 hehehai. Licensed under the MIT License.",
   "out": "build",
+  "resources": [
+    "LICENSE"
+  ],
   "macos": {
     "minimumSystemVersion": "14.0",
+    "entitlements": "entitlements.plist",
     "infoPlist": {
       "LSApplicationCategoryType": "public.app-category.utilities",
+      "CFBundleDevelopmentRegion": "zh-Hans",
       "CFBundleLocalizations": [
         "zh-Hans",
         "en"

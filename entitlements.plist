@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened Runtime entitlements for StopThat.app (Developer ID distribution).
+     The app is not sandboxed so it can scan user-selected application folders
+     and invoke macOS firewall tools; no extra runtime exceptions are required. -->
+<plist version="1.0">
+<dict/>
+</plist>
