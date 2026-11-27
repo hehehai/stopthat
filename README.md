@@ -6,16 +6,32 @@
 
 <p align="center">
   基于 <a href="https://mygo.run/zh">MyGo</a> 开发的跨平台（<b>Windows / macOS</b>）原生应用联网权限管理工具<br/>
-  内置 <b>图形界面（GUI）+ 命令行（CLI）+ MCP Server</b>，支持 <b>ChatGPT / WorkBuddy / Claude</b> 等 AI Agent 自动安装并全权处理
+  内置 <b>Adobe 套件一键联网拦截</b> 与 <b>网络环境体检</b>，同时支持 <b>GUI / CLI / MCP</b>，可由 <b>ChatGPT / WorkBuddy / Claude</b> 自动安装并全权处理
 </p>
 
 <p align="center">
   <a href="https://github.com/hehehai/stopthat/releases/latest">下载最新版 (v0.1.0)</a> ·
+  <a href="#针对-adobe-联网报错与弹窗问题的专门处理">Adobe 报错解决方案</a> ·
   <a href="https://raw.githubusercontent.com/hehehai/stopthat/main/SKILL.md">Agent Skill 文档</a> ·
   <a href="#界面预览">界面预览</a> ·
   <a href="#恢复方式">恢复与还原</a> ·
   <a href="#卸载方式">干净卸载</a>
 </p>
+
+---
+
+## 🎯 针对 Adobe 联网报错与弹窗问题的专门处理
+
+近期（2026 年 11 月底）中国区大量设计师与用户在使用 **Photoshop、Illustrator、Premiere Pro、After Effects、Lightroom** 等 Adobe 软件时，大面积出现联网校验报错与禁用弹窗（提示「此应用程序已被禁用 / 无法继续使用」等）。
+
+很多人尝试过拔网线/断 Wi-Fi（导致整台电脑无法上网）、改 `hosts`（开了代理就失效、域名变化也失效），或者手动在系统防火墙里只添加了一个 `Photoshop.exe`（结果后台服务仍在联网，过一会儿又弹窗）。
+
+**StopThat 专门针对这一场景做了完整闭环处理，在不影响电脑其他软件正常上网的前提下，一键隔离 Adobe 联网：**
+
+1. **主程序 + 后台组件一次扫全**：不仅扫描 Photoshop、Illustrator、Premiere Pro、After Effects、Lightroom 等主程序，还自动识别并纳入 `AdobeGCClient`、`AGSService`、`AGMService`、`agcinvokerutility`、`CCXProcess`、`CoreSync` 等容易被漏掉的关联后台组件（支持额外添加 D 盘等自定义安装目录）。
+2. **出站 + 入站双方向批量拦截**：Windows 端通过系统防火墙批量写入「出站 + 入站」阻止规则，覆盖域 / 专用 / 公用全部网络配置，不再需要手工逐个找路径、删引号、重复新建几十条规则。
+3. **专治「配了还是弹」的环境体检**：内置一键体检，自动排查常见失效原因——系统防火墙未开启、被**火绒 / 360** 等第三方安全软件接管、或开启了 **Clash / v2ray 等系统代理**；同时支持一键复制全部扫描到的程序路径清单，方便在火绒或代理软件中同步拦截。
+4. **随时一键还原，不污染系统**：所有规则均带有 `StopThat` 专属前缀，绝不误删系统原有规则，随时可以单个恢复或一键彻底清空。
 
 ---
 
