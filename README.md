@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="StopThat — 应用联网权限管理 · GUI / CLI / MCP" width="100%" />
+  <img src="docs/images/banner-v2.png" alt="StopThat — 应用联网权限管理 · GUI / CLI / MCP" width="100%" />
 </p>
 
 <h1 align="center">StopThat</h1>
@@ -72,13 +72,13 @@
 ## 📸 界面预览
 
 ### Adobe 套件一键联网管理（主程序 + 后台组件）
-![StopThat Adobe 套件管理界面](docs/images/screenshot-adobe.png)
+![StopThat Adobe 套件管理界面](docs/images/screenshot-adobe-v2.png)
 
 ### 网络与防火墙环境体检（排查第三方安全软件 / 代理冲突）
-![StopThat 网络与防火墙环境体检界面](docs/images/screenshot-diagnostics.png)
+![StopThat 网络与防火墙环境体检界面](docs/images/screenshot-diagnostics-v2.png)
 
 ### 已生效规则清单与一键还原
-![StopThat 已生效规则界面](docs/images/screenshot-rules.png)
+![StopThat 已生效规则界面](docs/images/screenshot-rules-v2.png)
 
 ---
 
