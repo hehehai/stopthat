@@ -2,10 +2,12 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/hehehai/stopthat/internal/app"
+	"github.com/hehehai/stopthat/internal/cli"
 	"github.com/hehehai/stopthat/internal/firewall"
 	"github.com/hehehai/stopthat/internal/store"
 )
@@ -16,9 +18,14 @@ func main() {
 		log.Printf("stopthat: config store fallback (in-memory): %v", err)
 	}
 
+	eng := firewall.NewEngine()
+	if cli.ShouldHandle(os.Args[1:]) {
+		os.Exit(cli.Run(os.Args[1:], eng, st, os.Stdin, os.Stdout, os.Stderr))
+	}
+
 	var win *mygo.Window
 
-	state := app.NewState(firewall.NewEngine(), st, app.Options{
+	state := app.NewState(eng, st, app.Options{
 		Async: true,
 		PickFolder: func(title string) (string, error) {
 			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
